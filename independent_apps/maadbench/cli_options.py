@@ -1,0 +1,27 @@
+"""MAADBench-only CLI options."""
+
+
+def add_cli_arguments(parser, dataset):
+    parser.add_argument("--prompt-context-policy", choices=["legacy", "ranked_budget"], default=None)
+    parser.add_argument("--separate-order", choices=["cascade_then_local", "local_then_cascade"], default=None)
+    parser.add_argument("--edge-types", nargs="+", choices=["sequential_flow", "execution_flow", "data_flow"], default=None)
+    parser.add_argument("--maadbench-diagnosis-scope", choices=["all", "official_test", "official_dev"], default="all")
+    parser.add_argument("--maadbench-cause-state-mode", choices=["legacy", "path"], default="legacy")
+    parser.add_argument("--maadbench-max-cause-path-states", type=int, default=4096)
+    parser.add_argument("--maadbench-evaluation-profile", choices=["legacy", "local_complete_cause_partial"], default="legacy")
+    parser.add_argument("--maadbench-dev-size", type=float, default=0.2)
+    parser.add_argument("--maadbench-dev-seed", type=int, default=5)
+    parser.add_argument("--maadbench-dev-trace-limit", type=int, default=None)
+    parser.add_argument("--maadbench-dev-pilot-seed", type=int, default=None)
+    parser.add_argument("--maadbench-dump-visible-context", action="store_true")
+    parser.add_argument("--maadbench-domain", choices=["gsm-hard", "livecodebench"], default=None)
+    parser.add_argument("--maadbench-trace-type", choices=["tool", "no_tool"], default=None)
+    parser.add_argument("--maadbench-source-model", action="append", default=None)
+    parser.add_argument("--maadbench-source-temperature", action="append", type=float, default=None)
+    parser.add_argument("--maadbench-seed", type=int, default=5)
+    parser.add_argument("--maadbench-test-size", type=float, default=0.2)
+    parser.add_argument("--maadbench-unknown-status", choices=["error", "anomaly", "drop"], default="error")
+    parser.add_argument("--maadbench-threshold-policy", choices=["fixed", "oracle"], default="fixed")
+    parser.add_argument("--maadbench-evaluation-score-source", choices=["final", "local"], default="final")
+    parser.add_argument("--maadbench-anomaly-fraction", type=float, default=0.1)
+    parser.add_argument("--maadbench-official-root", default=None)
