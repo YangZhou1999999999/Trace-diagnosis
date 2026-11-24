@@ -1,4 +1,9 @@
-"""Who&When-only CLI options."""
+"""Who&When-only CLI options.
+
+The shared --cascade-call-mode selects the diagnosis strategy:
+separate -> Original ZIP ReverseDependencyDFS;
+combined -> structured CombinedReverseDependencyDFS.
+"""
 
 
 def add_cli_arguments(parser, dataset):

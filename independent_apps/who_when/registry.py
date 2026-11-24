@@ -77,7 +77,9 @@ def run_who_when(
     resolved_checkpoint = checkpoint_file or spec.checkpoint_file
     if not skip_convert:
         print(f"Converting dataset {dataset} to graphs...")
-        graphs = spec.convert(resolved_input, resolved_graph, end, None)
+        graphs = spec.convert(
+            resolved_input, resolved_graph, end, settings.edge_types,
+        )
         print(f"Graph conversion complete: {len(graphs)} records -> {resolved_graph}")
     if convert_only:
         return []

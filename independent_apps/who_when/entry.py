@@ -1,4 +1,4 @@
-"""Who&When-only command execution and official evaluation routing."""
+"""Who&When command execution: current converter + Original/Combined diagnosis."""
 
 from dataclasses import asdict
 import json
@@ -39,10 +39,17 @@ def _evaluation_params(
             runtime_settings[key] = _safe_endpoint(runtime_settings[key])
     if runtime_settings["edge_types"] is None:
         runtime_settings["edge_types"] = ["sequential_flow", "execution_flow", "data_flow"]
+    diagnosis_mode = settings.cascade_call_mode
     return {
         "dataset": dataset,
         "family": "who_when",
-        "who_when_implementation": "current",
+        "who_when_implementation": (
+            "Original ZIP ReverseDependencyDFS"
+            if diagnosis_mode == "separate"
+            else "structured Combined ReverseDependencyDFS"
+        ),
+        "who_when_diagnosis_mode": diagnosis_mode,
+        "who_when_graph_converter": "current",
         "runtime_settings": runtime_settings,
         **paths,
         "run_options": {
@@ -70,16 +77,22 @@ def _evaluate(prediction_file: str, reference_path: str, output_path: str, param
 
 
 def run_who_when(dataset: str, settings: RuntimeSettings, args: Any) -> Any:
-    """Run the sole Who&When implementation: current."""
+    """Run Original ZIP or structured Combined Who&When diagnosis."""
 
     spec = get_dataset(dataset)
     resolved_input = args.input or spec.input_path
     should_evaluate = args.evaluate or args.evaluate_only
 
-    # Keep separate as the default for callers that do not specify
-    # a mode. The Notebook explicitly passes combined.
+    # Who&When uses the shared cascade-call-mode as its only strategy selector:
+    # separate -> Original ZIP diagnosis; combined -> structured Combined.
+    # Preserve the historical Original default when the CLI option is omitted.
     if getattr(args, "cascade_call_mode", None) is None:
         settings.cascade_call_mode = "separate"
+    diagnosis_mode = settings.cascade_call_mode
+    if diagnosis_mode not in {"separate", "combined"}:
+        raise ValueError(
+            "Who&When cascade_call_mode must be 'separate' or 'combined'."
+        )
 
     requested_max_causes = getattr(args, "max_causes", None)
     configured_max_causes = (
@@ -107,32 +120,34 @@ def run_who_when(dataset: str, settings: RuntimeSettings, args: Any) -> Any:
             "'legacy' or 'ranked_budget'."
         )
 
+    # The current Graph Converter is fixed. Both diagnosis modes share one Graph;
+    # Checkpoints and Evaluation reports remain isolated by call mode.
+    run_tag = f"{diagnosis_mode}_current_graph"
     resolved_graph = _resolve_dataset_file(
         args.graph_path,
-        f"{dataset}_graphs.jsonl",
+        f"{dataset}_current_graphs.jsonl",
     )
 
     resolved_checkpoint = _resolve_dataset_file(
         args.checkpoint_file,
-        f"{dataset}_results.json",
+        f"{dataset}_{run_tag}_results.json",
     )
 
     evaluation_output = (
         _resolve_evaluation_output(
-            args.evaluation_output, dataset
+            args.evaluation_output, f"{dataset}_{run_tag}"
         )
         if should_evaluate
         else None
     )
 
-    print("[WHO&WHEN IMPLEMENTATION] current")
-    print(
-        "[WHO&WHEN ALGORITHM] "
-        "branch-aware DAG traversal + "
-        "structured Local/Cascade inspection"
-    )
-    print("[WHO&WHEN GRAPH] current Who&When graph converter")
-    print("[WHO&WHEN CASCADE CALL MODE]", settings.cascade_call_mode)
+    diagnosis_labels = {
+        "separate": "Original ZIP ReverseDependencyDFS baseline",
+        "combined": "structured Combined ReverseDependencyDFS",
+    }
+    print(f"[WHO&WHEN DIAGNOSIS] {diagnosis_labels[diagnosis_mode]}")
+    print(f"[WHO&WHEN CASCADE CALL MODE] {diagnosis_mode}")
+    print("[WHO&WHEN GRAPH CONVERTER] current (fixed)")
     print(
         "[WHO&WHEN GROUND TRUTH]",
         "visible" if settings.include_ground_truth else "hidden"

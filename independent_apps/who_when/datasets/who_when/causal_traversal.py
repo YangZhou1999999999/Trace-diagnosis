@@ -239,7 +239,7 @@ def diagnose_local_only_dag(
     error_chain: List[Dict[str, Any]],
 ) -> Tuple[Optional[Dict[str, Any]], List[FailureCause], List[Dict[str, Any]]]:
     """Run the same validated downstream-first schedule without cascade calls."""
-    from .diagnoser import canonical_agent_id
+    from .diagnoser import _combined_canonical_agent_id as canonical_agent_id
 
     order, diagnostics = downstream_first_order(
         engine.nodes_map, engine.reverse_adj, engine.forward_adj, start_node_id

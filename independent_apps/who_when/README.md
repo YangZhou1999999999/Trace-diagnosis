@@ -1,39 +1,57 @@
-# Who&When independent project
+# Who&When: Original Separate + Structured Combined
 
-This directory owns the current Who&When implementation. Its diagnosis remains the dataset's `ReverseDependencyDFS` plus Stage 2 root selector; it does not use TRAIL/MAADBench's SharedDiagnosisEngine. It imports neither the legacy `trace_diagnosis` package nor either sibling project. The one shared launcher and common runtime settings are `main.py` and `independent_apps/shared/`; all Who&When processing remains here.
+This package uses one current Graph Converter and one diagnosis module. The
+shared `--cascade-call-mode` option is the only strategy selector.
 
-## Runtime and data
+## Architecture
 
-Run commands from the repository root with the existing project Python environment. The repository has no `requirements.txt`, `pyproject.toml`, `setup.py`, or Conda environment file, so this split does not invent an installation recipe. The baseline ran with `D:\anaconda\anaconda\envs\OpenAI\python.exe` and the dependencies present in that environment.
+- One Graph Converter: `datasets/who_when/graph_converter.py` (current, fixed).
+- One Diagnosis module: `datasets/who_when/diagnoser.py`.
+  - `ReverseDependencyDFS`: Original ZIP implementation, preserved unchanged.
+  - `CombinedReverseDependencyDFS`: additive structured Combined implementation.
+- One Runner: `datasets/who_when/runner.py`.
+- Combined support modules (schemas, evidence audit, causal state, traversal,
+  DAG schedule, and Stage-2 payload) remain separate helpers, not extra
+  Diagnoser implementations.
 
-Inputs default to `Who&When\Algorithm-Generated` and `Who&When\Hand-Crafted`, as defined in this project's `registry.py`. Set `TRACE_DIAGNOSIS_BASE_DIR` to change the base data directory. Outputs default to `outputs\independent\who_when`; set `WHO_WHEN_OUTPUT_DIR` to change the project-private output root. Graph JSONL, checkpoint/prediction JSON, and evaluation JSON are kept under that root unless explicitly overridden.
+## Select the diagnosis strategy
 
-## Commands
+Use the shared `--cascade-call-mode` option:
 
-```powershell
-python main.py --help
-python main.py --dataset who_when_algorithm --help
-python main.py --dataset who_when_algorithm --input "Who&When\Algorithm-Generated" --convert-only --graph-path outputs\independent\who_when\algorithm_graphs.jsonl
+- `separate`: Original ZIP `ReverseDependencyDFS` baseline.
+- `combined`: structured Combined diagnosis with joint Local/Cascade
+  inspection and branch-aware cause tracking.
+
+The Graph Converter is always the current implementation. There is no
+Who&When-specific Graph Converter selector.
+
+## Examples
+
+Original baseline:
+
+```bash
+python main.py --dataset who_when_algorithm --cascade-call-mode separate --llm-model gpt-5-mini --end 2
 ```
 
-Diagnosis uses the selected model/API config and can be limited with `--end`:
+Combined:
 
-```powershell
-python main.py --dataset who_when_algorithm --skip-convert --graph-path outputs\independent\who_when\algorithm_graphs.jsonl --checkpoint-file outputs\independent\who_when\algorithm_predictions.json --end 5 --llm-model <model-id> --api-config <external-api-config.json>
+```bash
+python main.py --dataset who_when_algorithm --cascade-call-mode combined --llm-model gpt-5-mini --max-causes 8 --end 2
 ```
 
-The diagnosis command sends model requests when run. The API JSON stays outside the repository; the project default is `E:\Work\paper9\api_config.json`, and `--api-config` takes precedence. The CLI accepts `api_key`, `base_url`, and optional `model`; credentials are never copied into this project.
+Both strategies use the same current Graph file. Checkpoint and Evaluation
+paths are isolated by diagnosis mode (`separate_current_graph` vs
+`combined_current_graph`).
 
-Evaluate an existing checkpoint without diagnosis calls:
+## Reproducibility notes
 
-```powershell
-python main.py --dataset who_when_algorithm --input "Who&When\Algorithm-Generated" --skip-convert --graph-path outputs\independent\who_when\algorithm_graphs.jsonl --checkpoint-file outputs\independent\who_when\algorithm_predictions.json --evaluation-output outputs\independent\who_when\algorithm_evaluation.json --evaluate-only
-```
-
-Evaluation uses the copied Who&When evaluation adapter and existing official identity/metric protocol. `--evaluate-only` reads the supplied graph, prediction file, and reference input; it does not call a model.
-
-## Checkpoints and code map
-
-The checkpoint records trace identities and diagnosis output using the copied Who&When runner/I/O. Keep separate files when changing model or settings; do not point this project at legacy checkpoints unless their identity and schema have been checked. Core files are `datasets/who_when/diagnoser.py`, `causal_traversal.py`, `causal_state.py`, `stage2_payload.py`, `runner.py`, `common/llm.py`, and `evaluation/who_when.py`.
-
-The single-entry architecture, migration map, and offline evidence are in `../../docs/dataset_split/08_SHARED_ENTRYPOINT_MIGRATION_MAP.md`, `../../docs/dataset_split/09_DATASET_ISOLATION_REPORT.md`, and `../../docs/dataset_split/10_BEHAVIOR_PARITY_REPORT.md`.
+- Original diagnosis source is copied from the Original ZIP as the exact byte
+  prefix of `diagnoser.py`; the Combined implementation is appended after it.
+- The current Graph Converter is used for both strategies, so Diagnosis is the
+  intended experimental variable.
+- Original ZIP's old Graph Converter, Runner, transport, and evaluator are not
+  restored. This is an Original-diagnosis baseline under the current
+  independent_apps pipeline, not a byte-for-byte reproduction of the entire
+  old project.
+- `MAX_CAUSES`, prompt-context policy, and upstream prompt budget are consumed
+  by Combined; the Original baseline keeps its own original behavior.
