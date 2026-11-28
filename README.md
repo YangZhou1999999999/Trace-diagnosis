@@ -497,15 +497,7 @@ The optional `run_all_benchmarks_best_full.py` script runs the five dataset IDs 
 Review the full configuration in the script, including request budgets and MAADBench split settings. The full script expects the experimental source data; counts may differ for other upstream revisions. MAADBench conversion indexes the full source dataset, not only the test split. The two model IDs require compatible provider endpoints and appropriate model access.
 
 1. Prepare the data as described in Section 1.1. Set `DATASET_CONFIGS["maadbench"]["official_root"]` if the official utility checkout is not discovered automatically.
-2. Create private `api_config2.json` (GPT-5-mini) and `api_config.json` (Claude Haiku 5.5) in the project root, or set `TRACE_DIAGNOSIS_GPT5MINI_API_CONFIG` and `TRACE_DIAGNOSIS_CLAUDE_API_CONFIG` to their locations. Use each provider's correct endpoint; the example JSON is for an OpenAI-compatible endpoint, not Anthropic's native endpoint.
-3. Leave `DRY_RUN = True` for the first invocation and review the plan. This checks paths and parses the intended CLI arguments; it may create output directories, but does not execute graph conversion, diagnosis, or evaluation. Set `DRY_RUN = False` only when ready to incur model API costs.
-
-```bash
-python run_all_benchmarks_best_full.py
-```
-
-The batch script and Notebook share the default full graph filenames. Their checkpoint identities are not interchangeable: use the same entry point and unchanged configuration to resume a run, or explicitly select and verify existing files. The public launch defaults may differ from a previously used local configuration; existing experiment outputs need not be rerun or renamed.
-
+2. Create private `api_config2.json in the project root, or set `TRACE_DIAGNOSIS_GPT5MINI_API_CONFIG` and `TRACE_DIAGNOSIS_CLAUDE_API_CONFIG` to their locations. Use each provider's correct endpoint; the example JSON is for an OpenAI-compatible endpoint, not Anthropic's native endpoint.
 Run the included offline CLI/configuration tests without model API calls:
 
 ```bash
