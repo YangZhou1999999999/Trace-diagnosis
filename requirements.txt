@@ -1,0 +1,15 @@
+# Core dependencies (Python 3.10 recommended).
+# Compatibility ranges, not an exact lock of the original experiment environment.
+openai>=1.55,<3
+httpx>=0.27,<1
+pydantic>=2.8,<3
+tiktoken>=0.7,<1
+pandas>=2,<4
+numpy>=1.24,<3
+scikit-learn>=1.3,<2
+pyarrow>=14
+
+# Interactive experiment notebook
+jupyterlab>=4,<5
+ipykernel>=6
+nbformat>=5,<6

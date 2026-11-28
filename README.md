@@ -6,40 +6,68 @@ This guide describes the supported datasets, execution methods, public parameter
 
 | Dataset ID | Dataset | Input data |
 |---|---|---|
-| `who_when_algorithm` | Who&When Algorithm-Generated | JSON / JSONL file or directory |
-| `who_when_handcrafted` | Who&When Hand-Crafted | JSON / JSONL file or directory |
+| `who_when_algorithm` | Who&When Algorithm-Generated | JSON directory for end-to-end use; JSON/JSONL files for conversion only |
+| `who_when_handcrafted` | Who&When Hand-Crafted | JSON directory for end-to-end use; JSON/JSONL files for conversion only |
 | `trail_gaia` | TRAIL GAIA | Parquet / JSON / JSONL |
 | `trail_swe_bench` | TRAIL SWE-bench | Parquet / JSON / JSONL |
 | `maadbench` | MAADBench | Directory of MAADBench trace JSON files |
 
 Each benchmark uses graph conversion, diagnosis, and evaluation procedures appropriate to its data format. Select the dataset ID corresponding to your input data. Do not reuse a graph or checkpoint from a different dataset.
 
+### 1.1 Dataset Preparation
+
+The source datasets are not distributed with this repository. Obtain them from their original providers, following their access terms:
+
+- **Who&When:** [official code and dataset](https://github.com/ag2ai/Agents_Failure_Attribution). Copy the original JSON directories `Who&When/Algorithm-Generated/` and `Who&When/Hand-Crafted/`. The evaluator currently requires a directory containing the original labeled JSON files; single JSON and JSONL inputs are supported for graph conversion, not end-to-end evaluation.
+- **TRAIL:** [Hugging Face dataset](https://huggingface.co/datasets/PatronusAI/TRAIL) and [official benchmark code](https://github.com/patronus-ai/trail-benchmark). Download the GAIA and SWE-bench Parquet files (or use a compatible JSON/JSONL input supported by the converter). Use `--input` or `INPUT_OVERRIDE` if the downloaded filenames differ from the defaults below.
+- **MAADBench:** [official benchmark repository](https://github.com/LeiMa0324/MAADBench) and [MAADBench-Full dataset](https://huggingface.co/datasets/hww123/MAADBench-full). Place the original GPT-4.1 trace files, preserving their directory structure, under `Data/gpt-4.1/`. Obtain a compatible checkout of the official benchmark utilities, including `benchmark_AD/utils.py`, and set `MAAD_OFFICIAL_ROOT` or `--maadbench-official-root` if automatic discovery fails. Install any additional dependencies required by that checkout.
+
+Default input layout (relative to the project root):
+
+```text
+Trace-diagnosis/
+├── Who&When/
+│   ├── Algorithm-Generated/
+│   └── Hand-Crafted/
+├── gaia-00000-of-00001-33a2e72d362d688a.parquet
+├── swe_bench-00000-of-00001-91aa04220f7198b4.parquet
+├── Data/
+│   └── gpt-4.1/
+├── independent_apps/
+├── main.py
+└── trace_diagnosis_independent_run_and_evaluate.ipynb
+```
+
+For data stored elsewhere, use `--input "path/to/data"` in the CLI or `INPUT_OVERRIDE = Path("path/to/data")` in the Notebook. Keep the source labels available for evaluation; the diagnosis pipeline removes the top-level evaluation labels before model inspection.
+
+Dataset revisions may change filenames, trace counts, or official splits. For exact reproduction, use the same source revisions and split manifests as the original experiment. The links above identify the original providers, not a verified immutable snapshot of the experimental data.
+
 ## 2. Environment and API Configuration
 
 ### 2.1 Python Environment
 
-Use the project's existing Python or Conda environment. The current package does not provide a version-pinned `requirements.txt`, `pyproject.toml`, or Conda environment file. Use a verified environment and ensure that the following dependencies are available:
+Python 3.10 is recommended. From the repository root, create and activate a clean environment, then install the dependencies:
 
-- `openai`
-- `httpx`
-- `pydantic`
-- `tiktoken`
-- `pandas`
-- `numpy`
-- `scikit-learn`
-- A Parquet reading backend (e.g., `pyarrow`)
+```bash
+conda create -n trace-diagnosis python=3.10 -y
+conda activate trace-diagnosis
+python -m pip install -r requirements.txt
+python -m ipykernel install --user --name trace-diagnosis --display-name "Python (trace-diagnosis)"
+```
 
-The official MAADBench test/development splits and evaluation also require `benchmark_AD/utils.py` from the official MAADBench repository.
+Alternatively, use an existing Python environment with the same dependencies. `requirements.txt` specifies compatibility ranges; it is not an exact lock of the original experiment environment. Record `python -m pip freeze` and the Python version when reproducing experiments. For MAADBench official evaluation, also install the dependencies of the matching official benchmark checkout.
+
+Start Jupyter with `jupyter lab` and select the `Python (trace-diagnosis)` kernel.
 
 ### 2.2 API Configuration JSON
 
-Store the API configuration outside the project directory. Do not put API keys directly in the Notebook or commit them to the repository.
+Copy `api_config.example.json` to a private `api_config.json` file and fill in your own credentials. A file at the project root is convenient for the Notebook and is excluded by `.gitignore`; storing it outside the repository is also supported. Never commit actual credentials or paste them into the Notebook. The CLI examples explicitly specify `--api-config`.
 
 ```json
 {
   "api_key": "<YOUR_API_KEY>",
-  "base_url": "<API_BASE_URL>",
-  "model": "<OPTIONAL_MODEL_ID>"
+  "base_url": "https://api.openai.com/v1",
+  "model": "gpt-5-mini"
 }
 ```
 
@@ -53,7 +81,7 @@ Graph conversion and evaluation do not call an LLM. Diagnosis makes model reques
 
 ## 3. Command-Line Usage
 
-Run the following commands from the project root containing `main.py`.
+Run the following commands from the project root containing `main.py`. Multi-line examples use Bash line continuations (`\`); in Windows Anaconda Prompt, put each command on one line or use `^` instead.
 
 ### 3.1 View Help
 
@@ -72,9 +100,9 @@ Convert the input data without calling a model:
 
 ```bash
 python main.py --dataset trail_gaia \
-  --input <PATH_TO_GAIA_PARQUET> \
+  --input "gaia-00000-of-00001-33a2e72d362d688a.parquet" \
   --convert-only \
-  --graph-path <PATH_TO_GRAPH_JSONL>
+  --graph-path "outputs/gaia_graphs.jsonl"
 ```
 
 The output is typically a JSONL file containing one graph record per line.
@@ -85,12 +113,12 @@ Run diagnosis using an existing graph:
 
 ```bash
 python main.py --dataset trail_gaia \
-  --input <PATH_TO_GAIA_PARQUET> \
+  --input "gaia-00000-of-00001-33a2e72d362d688a.parquet" \
   --skip-convert \
-  --graph-path <PATH_TO_GRAPH_JSONL> \
-  --checkpoint-file <PATH_TO_CHECKPOINT_JSON> \
-  --llm-model <MODEL_ID> \
-  --api-config <PATH_TO_API_CONFIG_JSON> \
+  --graph-path "outputs/gaia_graphs.jsonl" \
+  --checkpoint-file "outputs/gaia_predictions.json" \
+  --llm-model "gpt-5-mini" \
+  --api-config "api_config.json" \
   --end 5
 ```
 
@@ -106,11 +134,11 @@ Evaluate saved predictions without calling a model:
 
 ```bash
 python main.py --dataset trail_gaia \
-  --input <PATH_TO_GAIA_PARQUET> \
+  --input "gaia-00000-of-00001-33a2e72d362d688a.parquet" \
   --skip-convert \
-  --graph-path <PATH_TO_GRAPH_JSONL> \
-  --checkpoint-file <PATH_TO_CHECKPOINT_JSON> \
-  --evaluation-output <PATH_TO_EVALUATION_JSON> \
+  --graph-path "outputs/gaia_graphs.jsonl" \
+  --checkpoint-file "outputs/gaia_predictions.json" \
+  --evaluation-output "outputs/gaia_evaluation.json" \
   --evaluate-only
 ```
 
@@ -146,7 +174,7 @@ The following parameters are available across multiple datasets.
 | `--no-cascade` | Flag | Disable cascade inspection and use local-only diagnosis. |
 | `--cascade-call-mode` | `combined` / `separate` | Select how local and cascade inspections are called. |
 | `--no-ground-truth` | Flag | Exclude the top-level `ground_truth` field from model-visible graph data. |
-| `--include-eval-labels` | Flag | Include evaluation labels in model-visible data; intended only for explicitly labeled debugging. |
+| `--include-eval-labels` | Flag | Save evaluation labels in the prediction/checkpoint record for auditing; these top-level labels are still removed before diagnosis. |
 | `--max-causes` | Positive integer; default 8 | Limit retained and propagated candidate causes. |
 | `--traversal-mode` | `auto` / `bfs` / `dfs` | Select graph traversal mode. |
 | `--max-prompt-upstream-chars` | Non-negative integer | Character budget for upstream context. |
@@ -244,9 +272,13 @@ Changing the edge set changes the graph structure. Use distinct graph files and 
 
 The two Who&When dataset IDs correspond to the Algorithm-Generated and Hand-Crafted subsets.
 
+For Who&When, `--max-causes`, `--max-prompt-upstream-chars`, `--prompt-context-policy`, and `--max-stage2-candidates` configure the Combined implementation. The Separate implementation retains its own internal candidate and context settings; changing these flags does not tune that implementation. `--separate-order` applies only to Separate with cascade enabled. `--edge-types` applies to graph construction for both modes.
+
 ## 7. TRAIL-Specific Parameters
 
 ### 7.1 Cause State: H0 / H1
+
+`--trail-cause-state-mode` / `TRAIL_CAUSE_STATE`:
 
 | Value | Meaning |
 |---|---|
@@ -269,7 +301,7 @@ In the Notebook, `TRAIL_SCHEDULE_SCOPE=None` uses the default `legacy`, and `TRA
 | Parameter | Meaning |
 |---|---|
 | `--trail-max-completion-tokens` | Maximum completion tokens for a single model response. |
-| `--trail-api-request-limit` | Maximum number of API requests allowed in a run; uses the project default if omitted. |
+| `--trail-api-request-limit` | Maximum number of API requests allowed in a run; no explicit client-side request-count cap if omitted. |
 | `--trail-request-token-budget` | Enable request token-budget management. |
 | `--trail-request-context-limit` | Request context token limit. |
 | `--trail-request-hard-projected-limit` | Hard limit on projected tokens before a request is sent. |
@@ -296,6 +328,8 @@ The corresponding Notebook variables use the `TRAIL_REQUEST_*` prefix and relate
 MAADBench graph conversion builds a full graph index of the source data. `MAAD_SCOPE` selects which traces are actually diagnosed. `END` limits diagnosis, not the construction of the full graph index.
 
 ### 8.2 Cause State: legacy / path
+
+`--maadbench-cause-state-mode` / `MAAD_CAUSE_STATE`:
 
 | Value | Meaning |
 |---|---|
@@ -349,7 +383,7 @@ When using `local_complete_cause_partial`, report the profile and the numbers of
 
 Accompanying Notebook:
 
-`trace_diagnosis_independent_run_and_evaluate_WhoWhen_cascade_call_mode.ipynb`
+[`trace_diagnosis_independent_run_and_evaluate.ipynb`](trace_diagnosis_independent_run_and_evaluate.ipynb)
 
 ### 9.1 Location and Paths
 
@@ -398,7 +432,7 @@ Place the Notebook in the project root containing `independent_apps/`. If it is 
 | `MAX_CAUSES` | Maximum number of candidate causes retained. |
 | `MAX_PROMPT_UPSTREAM_CHARS` | Upstream context character budget. |
 | `NO_GROUND_TRUTH` | When `True`, exclude the top-level graph `ground_truth` field from model-visible data. |
-| `INCLUDE_EVAL_LABELS` | Include evaluation labels in model-visible data; disabled by default. |
+| `INCLUDE_EVAL_LABELS` | Save evaluation labels in the prediction/checkpoint record for auditing; disabled by default. |
 | `EDGE_TYPES` | Select graph edge types; see Section 5 for the available subsets. |
 
 ### 9.4 Output Paths
@@ -423,7 +457,7 @@ outputs/
 ## 10. Checkpoints, Resumption, and Result Interpretation
 
 - Resume from an existing checkpoint only when the model, graph, and diagnosis configuration match.
-- Use a new checkpoint path when changing the model, graph edge set, cause state, diagnosis mode, separate order, or MAADBench split.
+- Use a new checkpoint path when changing the model, graph edge set, cause state, diagnosis mode, separate order, or MAADBench split. Who&When does not enforce full configuration compatibility for manually selected checkpoints; verify the original configuration and graph before resuming. Matching trace counts alone do not prove graph identity.
 - Partial runs such as `END=2` are intended for workflow checks, not full-dataset results.
 - Inspect `coverage`, `evaluation_status`, the evaluated sample count, and the split during evaluation.
 - `SUCCESS`, `PARTIAL`, and `FAILED` are execution statuses, not measures of diagnostic accuracy.
@@ -442,8 +476,40 @@ Evaluation units and metric definitions differ across datasets. Compare numerica
 
 1. Start with a small `END` value to verify graph, checkpoint, and evaluation paths.
 2. Regenerate the graph and use a separate checkpoint when changing the graph edge set.
-3. For blind diagnosis, set `NO_GROUND_TRUTH=True` and keep `INCLUDE_EVAL_LABELS=False`.
+3. For blind diagnosis, set `NO_GROUND_TRUTH=True`. This removes the top-level task reference answer (`ground_truth`), not necessarily every reference embedded in raw trace text. Keep `INCLUDE_EVAL_LABELS=False` unless reference labels are needed in saved records for auditing.
 4. `MAAD_SCOPE=all` diagnoses all graph records. Use `official_test` to diagnose only the official test split.
 5. The `oracle` threshold uses evaluation labels to select the threshold and is suitable only as an oracle comparison. Explicitly report the threshold policy used for primary results.
 6. Set `MAAD_OFFICIAL_ROOT` if the official MAADBench evaluation utilities cannot be located automatically.
 7. After changing `EDGE_TYPES` or `SEPARATE_ORDER`, rerun Sections 4–5 of the Notebook. Do not manually reuse checkpoints from a different configuration.
+
+## 13. Full Benchmark Runs and Offline Checks
+
+The optional `run_all_benchmarks_best_full.py` script runs the five dataset IDs with GPT-5-mini first, followed by Claude Haiku 5.5. It preserves the selected diagnosis settings used in the full runs:
+
+| Dataset | Diagnosis settings | Expected experimental scope |
+|---|---|---|
+| Who&When Algorithm-Generated | Separate, Local-first, task ground truth allowed | 126 traces |
+| Who&When Hand-Crafted | Separate, Local-first, task ground truth allowed | 58 traces |
+| TRAIL GAIA | Combined, H1, legacy schedule/context, gated, path-state budget 512 | 117 traces |
+| TRAIL SWE-bench | Combined, H1, all-nodes schedule, ranked-budget context, gated, path-state budget 8 | 31 traces |
+| MAADBench | Combined, legacy cause state, official test, GSM-Hard, tool, fixed threshold, final score | 20 test traces / 135 actions in the original split |
+
+Review the full configuration in the script, including request budgets and MAADBench split settings. The full script expects the experimental source data; counts may differ for other upstream revisions. MAADBench conversion indexes the full source dataset, not only the test split. The two model IDs require compatible provider endpoints and appropriate model access.
+
+1. Prepare the data as described in Section 1.1. Set `DATASET_CONFIGS["maadbench"]["official_root"]` if the official utility checkout is not discovered automatically.
+2. Create private `api_config2.json` (GPT-5-mini) and `api_config.json` (Claude Haiku 5.5) in the project root, or set `TRACE_DIAGNOSIS_GPT5MINI_API_CONFIG` and `TRACE_DIAGNOSIS_CLAUDE_API_CONFIG` to their locations. Use each provider's correct endpoint; the example JSON is for an OpenAI-compatible endpoint, not Anthropic's native endpoint.
+3. Leave `DRY_RUN = True` for the first invocation and review the plan. This checks paths and parses the intended CLI arguments; it may create output directories, but does not execute graph conversion, diagnosis, or evaluation. Set `DRY_RUN = False` only when ready to incur model API costs.
+
+```bash
+python run_all_benchmarks_best_full.py
+```
+
+The batch script and Notebook share the default full graph filenames. Their checkpoint identities are not interchangeable: use the same entry point and unchanged configuration to resume a run, or explicitly select and verify existing files. The public launch defaults may differ from a previously used local configuration; existing experiment outputs need not be rerun or renamed.
+
+Run the included offline CLI/configuration tests without model API calls:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+These tests check launch argument handling and settings, not model quality or full benchmark reproduction.
