@@ -7,6 +7,8 @@ combined -> structured CombinedReverseDependencyDFS.
 
 
 def add_cli_arguments(parser, dataset):
+    parser.add_argument("--separate-order", choices=["local_then_cascade", "cascade_then_local"], default=None)
+    parser.add_argument("--edge-types", nargs="+", choices=["sequential_flow", "execution_flow", "data_flow"], default=None)
     parser.add_argument("--max-stage2-candidates", type=int, default=None)
     parser.add_argument("--include-full-analysis", action="store_true")
     parser.add_argument(

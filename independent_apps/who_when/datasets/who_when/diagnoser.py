@@ -457,7 +457,7 @@ class LLMService:
         self,
         current_node: Dict[str, Any],
         predecessors: List[Dict[str, Any]],
-        local_eval: Dict[str, Any],
+        local_eval: Optional[Dict[str, Any]],
         active_causes: List[FailureCause],
         context: Dict[str, Any],
     ) -> Dict[str, Any]:
@@ -508,6 +508,13 @@ class LLMService:
             f"DIRECT PREDECESSOR CONTEXT:\n{predecessor_context}\n\n"
             f"CURRENT STEP ({idx}) CONTENT:\n{curr_content}\n"
         )
+
+        if local_eval is None:
+            prompt += (
+                "\nLocal inspection has not been performed yet. Infer the cascade relation "
+                "from the active causes, current step and predecessor evidence only. "
+                "Do not interpret missing Local results as evidence of correctness or error.\n"
+            )
 
         try:
             response = self.llm_server.create(
@@ -785,6 +792,15 @@ class LLMService:
             "4. CandidateRole: INTRODUCER_CANDIDATE|PROPAGATION_EVIDENCE|VERIFICATION_EVIDENCE|EXPOSURE_EVIDENCE|NO_RELEVANT_EVIDENCE\n"
             "5. Reason: [brief evidence-based explanation]"
         )
+
+        if context.get("cascade_evidence") is not None:
+            # Cascade-first only: retain the existing Local instructions and output format.
+            prompt += (
+                "\n\nPreliminary cascade attribution (hypothesis, not ground truth):\n"
+                + json.dumps(context["cascade_evidence"], ensure_ascii=False, default=str)
+                + "\nUse this as supplementary evidence; independently verify the current step "
+                  "against the trace. Do not assume the cascade attribution is correct."
+            )
 
         try:
             response = self.llm_server.create(
@@ -1295,7 +1311,11 @@ class ReverseDependencyDFS:
         llm_server: Optional[LLMServer] = None,
         traversal_mode: str = "dfs",
         combined_cascade_enabled: bool = False,
+        separate_order: str = "local_then_cascade",
     ):
+        if separate_order not in {"local_then_cascade", "cascade_then_local"}:
+            raise ValueError(f"Unsupported Separate order: {separate_order!r}")
+        self.separate_order = separate_order
         # -------------------------------------------------------------
         # A. Load graph
         # -------------------------------------------------------------
@@ -1710,12 +1730,15 @@ class ReverseDependencyDFS:
         current_node: Dict[str, Any],
         predecessor_nodes: List[Dict[str, Any]],
         successor_nodes: Optional[List[Dict[str, Any]]] = None,
+        cascade_evidence: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         context = {
             "query": self.query,
             "ground_truth": self.ground_truth,
             "final_node": self.find_final_evidence_node() or self.find_final_node(),
         }
+        if cascade_evidence is not None:
+            context["cascade_evidence"] = cascade_evidence
         
         if self.custom_local_evaluator is not None:
             try:
@@ -1833,6 +1856,20 @@ class ReverseDependencyDFS:
                 },
             )
             local_eval = self._normalize_local_evaluation(current_node, local_result)
+        elif self.separate_order == "cascade_then_local":
+            cascade_eval = self.llm_service.cascade_attribution_evaluator(
+                current_node=current_node,
+                predecessors=predecessor_nodes,
+                local_eval=None,
+                active_causes=active_causes,
+                context={"query": self.query, "ground_truth": self.ground_truth},
+            )
+            local_eval = self._inspect_current_node_local(
+                current_node=current_node,
+                predecessor_nodes=predecessor_nodes,
+                successor_nodes=successor_nodes or [],
+                cascade_evidence=cascade_eval,
+            )
         else:
             
             local_eval = self._inspect_current_node_local(

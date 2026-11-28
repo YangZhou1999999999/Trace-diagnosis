@@ -229,6 +229,7 @@ def make_diagnoser(
                 traversal_mode=settings.traversal_mode,
                 llm_server=llm_server,
                 combined_cascade_enabled=False,
+                separate_order=getattr(settings, "separate_order", "local_then_cascade"),
             )
         else:
             engine = CombinedReverseDependencyDFS(
@@ -296,6 +297,11 @@ def run(
             include_full_analysis=settings.include_full_analysis,
         )
         record["who_when_diagnosis_mode"] = diagnosis_mode
+        record["separate_order"] = (
+            getattr(settings, "separate_order", "local_then_cascade")
+            if settings.cascade_enabled and diagnosis_mode == "separate" else "not_applicable"
+        )
+        record["requested_edge_types"] = settings.edge_types if settings.edge_types is not None else None
         record["who_when_graph_converter"] = GRAPH_CONVERTER
         return record
 

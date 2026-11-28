@@ -7,6 +7,8 @@ from typing import Any, Dict, Optional
 
 from independent_apps.shared.settings import RuntimeSettings
 from .common.llm import _safe_endpoint
+from .common.graph_utils import normalize_edge_types
+from .datasets.who_when.graph_converter import EDGE_TYPES
 from .evaluation.who_when import evaluate_who_when_files
 from .registry import OUTPUT_DIR, get_dataset, run_who_when as run_who_when_dataset
 
@@ -32,7 +34,10 @@ def _evaluation_params(
     paths: Dict[str, str],
 ) -> Dict[str, Any]:
     runtime_settings = asdict(settings)
-    runtime_settings["separate_order"] = "not_applicable"
+    runtime_settings["separate_order"] = (
+        settings.separate_order if settings.cascade_enabled and settings.cascade_call_mode == "separate"
+        else "not_applicable"
+    )
     runtime_settings["api_key_configured"] = bool(runtime_settings.pop("api_key"))
     for key in ("llm_url", "proxy"):
         if runtime_settings.get(key):
@@ -94,6 +99,15 @@ def run_who_when(dataset: str, settings: RuntimeSettings, args: Any) -> Any:
             "Who&When cascade_call_mode must be 'separate' or 'combined'."
         )
 
+    # The common default is Cascade-first for other projects. Preserve Who&When
+    # Local-first when callers omit the option (including the existing batch script).
+    settings.separate_order = getattr(args, "separate_order", None) or "local_then_cascade"
+    if settings.edge_types is not None:
+        selected = normalize_edge_types(settings.edge_types, supported=EDGE_TYPES)
+        if len(settings.edge_types) != len(selected):
+            raise ValueError("Who&When edge types must not contain duplicates.")
+        settings.edge_types = [kind for kind in EDGE_TYPES if kind in selected]
+
     requested_max_causes = getattr(args, "max_causes", None)
     configured_max_causes = (
         requested_max_causes
@@ -122,10 +136,12 @@ def run_who_when(dataset: str, settings: RuntimeSettings, args: Any) -> Any:
 
     # The current Graph Converter is fixed. Both diagnosis modes share one Graph;
     # Checkpoints and Evaluation reports remain isolated by call mode.
-    run_tag = f"{diagnosis_mode}_current_graph"
+    edge_suffix = ("_" + "+".join(sorted(settings.edge_types))) if settings.edge_types is not None and set(settings.edge_types) != set(EDGE_TYPES) else ""
+    order_suffix = ("_cascade_then_local" if settings.cascade_enabled and diagnosis_mode == "separate" and settings.separate_order == "cascade_then_local" else "")
+    run_tag = f"{diagnosis_mode}{order_suffix}_current_graph{edge_suffix}"
     resolved_graph = _resolve_dataset_file(
         args.graph_path,
-        f"{dataset}_current_graphs.jsonl",
+        f"{dataset}_current{edge_suffix}_graphs.jsonl",
     )
 
     resolved_checkpoint = _resolve_dataset_file(
@@ -147,6 +163,9 @@ def run_who_when(dataset: str, settings: RuntimeSettings, args: Any) -> Any:
     }
     print(f"[WHO&WHEN DIAGNOSIS] {diagnosis_labels[diagnosis_mode]}")
     print(f"[WHO&WHEN CASCADE CALL MODE] {diagnosis_mode}")
+    if settings.cascade_enabled and diagnosis_mode == "separate":
+        print(f"[WHO&WHEN SEPARATE ORDER] {settings.separate_order}")
+    print("[WHO&WHEN EDGE TYPES]", settings.edge_types or list(EDGE_TYPES))
     print("[WHO&WHEN GRAPH CONVERTER] current (fixed)")
     print(
         "[WHO&WHEN GROUND TRUTH]",
