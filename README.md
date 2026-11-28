@@ -482,26 +482,10 @@ Evaluation units and metric definitions differ across datasets. Compare numerica
 6. Set `MAAD_OFFICIAL_ROOT` if the official MAADBench evaluation utilities cannot be located automatically.
 7. After changing `EDGE_TYPES` or `SEPARATE_ORDER`, rerun Sections 4–5 of the Notebook. Do not manually reuse checkpoints from a different configuration.
 
-## 13. Full Benchmark Runs and Offline Checks
+## 13. Offline Tests
 
-The optional `run_all_benchmarks_best_full.py` script runs the five dataset IDs with GPT-5-mini first, followed by Claude Haiku 5.5. It preserves the selected diagnosis settings used in the full runs:
+Run the included CLI and configuration tests without
+benchmark data, API credentials, or model requests:
 
-| Dataset | Diagnosis settings | Expected experimental scope |
-|---|---|---|
-| Who&When Algorithm-Generated | Separate, Local-first, task ground truth allowed | 126 traces |
-| Who&When Hand-Crafted | Separate, Local-first, task ground truth allowed | 58 traces |
-| TRAIL GAIA | Combined, H1, legacy schedule/context, gated, path-state budget 512 | 117 traces |
-| TRAIL SWE-bench | Combined, H1, all-nodes schedule, ranked-budget context, gated, path-state budget 8 | 31 traces |
-| MAADBench | Combined, legacy cause state, official test, GSM-Hard, tool, fixed threshold, final score | 20 test traces / 135 actions in the original split |
-
-Review the full configuration in the script, including request budgets and MAADBench split settings. The full script expects the experimental source data; counts may differ for other upstream revisions. MAADBench conversion indexes the full source dataset, not only the test split. The two model IDs require compatible provider endpoints and appropriate model access.
-
-1. Prepare the data as described in Section 1.1. Set `DATASET_CONFIGS["maadbench"]["official_root"]` if the official utility checkout is not discovered automatically.
-2. Create private `api_config2.json in the project root, or set `TRACE_DIAGNOSIS_GPT5MINI_API_CONFIG` and `TRACE_DIAGNOSIS_CLAUDE_API_CONFIG` to their locations. Use each provider's correct endpoint; the example JSON is for an OpenAI-compatible endpoint, not Anthropic's native endpoint.
-Run the included offline CLI/configuration tests without model API calls:
-
-```bash
+```sh
 python -m unittest discover -s tests -v
-```
-
-These tests check launch argument handling and settings, not model quality or full benchmark reproduction.
