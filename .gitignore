@@ -1,0 +1,38 @@
+# Python and notebook caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+.coverage
+htmlcov/
+
+# Local environments and credentials
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+api_config*.json
+!api_config.example.json
+*.pem
+*.key
+
+# Downloaded benchmark data (obtain from original sources)
+/Who&When/
+/Data/
+/MAADBench/
+/*.parquet
+
+# Generated experiment artifacts
+/outputs/
+*.log
+
+# Temporary and backup files
+*.tmp
+*.bak
+*.backup*
+*~
+.DS_Store
+Thumbs.db
