@@ -18,7 +18,7 @@ Each benchmark uses graph conversion, diagnosis, and evaluation procedures appro
 
 The source datasets are not distributed with this repository. Obtain them from their original providers, following their access terms:
 
-- **Who&When:** [official code and dataset](https://github.com/ag2ai/Agents_Failure_Attribution). Copy the original JSON directories `Who&When/Algorithm-Generated/` and `Who&When/Hand-Crafted/`. The evaluator currently requires a directory containing the original labeled JSON files; single JSON and JSONL inputs are supported for graph conversion, not end-to-end evaluation.
+- **Who&When:** [official code and dataset](https://github.com/ag2ai/Agents_Failure_Attribution). Copy the original JSON directories `Who&When/Algorithm-Generated/` and `Who&When/Hand-Crafted/`. Use the labeled JSON directories for diagnosis and evaluation.
 - **TRAIL:** [Hugging Face dataset](https://huggingface.co/datasets/PatronusAI/TRAIL) and [official benchmark code](https://github.com/patronus-ai/trail-benchmark). Download the GAIA and SWE-bench Parquet files (or use a compatible JSON/JSONL input supported by the converter). Use `--input` or `INPUT_OVERRIDE` if the downloaded filenames differ from the defaults below.
 - **MAADBench:** [official benchmark repository](https://github.com/LeiMa0324/MAADBench) and [MAADBench-Full dataset](https://huggingface.co/datasets/hww123/MAADBench-full). Place the original GPT-4.1 trace files, preserving their directory structure, under `Data/gpt-4.1/`. Obtain a compatible checkout of the official benchmark utilities, including `benchmark_AD/utils.py`, and set `MAAD_OFFICIAL_ROOT` or `--maadbench-official-root` if automatic discovery fails. Install any additional dependencies required by that checkout.
 
@@ -38,9 +38,9 @@ Trace-diagnosis/
 └── trace_diagnosis_independent_run_and_evaluate.ipynb
 ```
 
-For data stored elsewhere, use `--input "path/to/data"` in the CLI or `INPUT_OVERRIDE = Path("path/to/data")` in the Notebook. Keep the source labels available for evaluation; the diagnosis pipeline removes the top-level evaluation labels before model inspection.
+For data stored elsewhere, use `--input "path/to/data"` in the CLI or `INPUT_OVERRIDE = Path("path/to/data")` in the Notebook. Keep the labeled source data available for evaluation.
 
-Dataset revisions may change filenames, trace counts, or official splits. For exact reproduction, use the same source revisions and split manifests as the original experiment. The links above identify the original providers, not a verified immutable snapshot of the experimental data.
+For reproducible experiments, record the dataset revisions and split settings used.
 
 ## 2. Environment and API Configuration
 
@@ -55,13 +55,13 @@ python -m pip install -r requirements.txt
 python -m ipykernel install --user --name trace-diagnosis --display-name "Python (trace-diagnosis)"
 ```
 
-Alternatively, use an existing Python environment with the same dependencies. `requirements.txt` specifies compatibility ranges; it is not an exact lock of the original experiment environment. Record `python -m pip freeze` and the Python version when reproducing experiments. For MAADBench official evaluation, also install the dependencies of the matching official benchmark checkout.
+Alternatively, use an existing Python environment with the same dependencies. Record the installed package versions and Python version for reproducible experiments. For MAADBench official evaluation, also install the dependencies of the matching official benchmark checkout.
 
 Start Jupyter with `jupyter lab` and select the `Python (trace-diagnosis)` kernel.
 
 ### 2.2 API Configuration JSON
 
-Copy `api_config.example.json` to a private `api_config.json` file and fill in your own credentials. A file at the project root is convenient for the Notebook and is excluded by `.gitignore`; storing it outside the repository is also supported. Never commit actual credentials or paste them into the Notebook. The CLI examples explicitly specify `--api-config`.
+Copy `api_config.example.json` to a private `api_config.json` file and fill in your own credentials. A file at the project root is convenient for the Notebook and is excluded by `.gitignore`; storing it outside the repository is also supported. Never commit actual credentials or paste them into the Notebook. Use an OpenAI-compatible endpoint supporting your chosen model and structured-output requests. Specify `--api-config` explicitly when running diagnosis.
 
 ```json
 {
@@ -126,7 +126,7 @@ python main.py --dataset trail_gaia \
 - `--end 5`: Diagnose only the first five records for a small-scale test.
 - Omit `--end` to diagnose all records in the selected scope.
 
-Without `--skip-convert`, the launcher converts the input data before running diagnosis.
+Without `--skip-convert`, the launcher converts the input data before running diagnosis. For Who&When and TRAIL, `--end` also limits graph conversion when conversion is run. To convert all traces and diagnose a subset, run conversion separately without `--end`.
 
 ### 3.4 Evaluation
 
@@ -162,7 +162,7 @@ The following parameters are available across multiple datasets.
 | `--input` | Path; dataset default if omitted | Original input file or directory. |
 | `--graph-path` | File or directory path | Graph JSONL location. |
 | `--checkpoint-file` | File or directory path | Prediction and resumption checkpoint location. |
-| `--end` | Positive integer; all records if omitted | Maximum number of records to diagnose. |
+| `--end` | Positive integer; all records if omitted | Limit diagnosis records; also limits conversion for Who&When and TRAIL when conversion is enabled. |
 | `--skip-convert` | Flag | Skip graph conversion and reuse an existing graph. |
 | `--convert-only` | Flag | Convert graphs without calling a model. |
 | `--evaluate` | Flag | Run evaluation after diagnosis. |
@@ -192,10 +192,10 @@ These call patterns refer to the local and cascade portions of node inspection, 
 
 All three benchmarks support `--separate-order` to select the order in separate mode:
 
-| Value | Order | Information used by the second stage |
-|---|---|---|
-| `local_then_cascade` | Local, then Cascade | Cascade uses the local inspection result. |
-| `cascade_then_local` | Cascade, then Local | Local uses cascade attribution as evidence. |
+| Value | Order |
+|---|---|
+| `local_then_cascade` | Local inspection, then cascade attribution. |
+| `cascade_then_local` | Cascade attribution, then local inspection. |
 
 Who&When defaults to `local_then_cascade`; TRAIL and MAADBench default to `cascade_then_local`. Either order can be selected explicitly. The `--no-cascade` flag disables the cascade stage.
 
@@ -209,8 +209,8 @@ Who&When defaults to `local_then_cascade`; TRAIL and MAADBench default to `casca
 
 The available policies depend on the dataset:
 
-- `legacy`: Use the existing upstream-context selection method.
-- `ranked_budget`: Rank candidate upstream context and select content within the `--max-prompt-upstream-chars` character budget.
+- `legacy`: Use the dataset-specific default upstream-context policy: direct predecessors for Who&When (Combined), priority-based edge groups for TRAIL, and up to three distinct upstream nodes for MAADBench.
+- `ranked_budget`: Select upstream context within the `--max-prompt-upstream-chars` character budget.
 - `prioritized_two_kinds`: TRAIL only. Select up to two non-empty edge-type groups in the priority order `data_flow`, `execution_flow`, `parent`, `other`, subject to the character budget.
 
 | Dataset | Supported prompt context policies |
@@ -248,18 +248,6 @@ Equivalent Notebook setting:
 EDGE_TYPES = ("execution_flow", "data_flow")
 ```
 
-**Who&When converter API:** The underlying `process_json_path(...)`, `process_json_directory(...)`, `convert_history_record(...)`, and `runner.convert_to_graphs(...)` interfaces accept an `edge_types` argument. The following example demonstrates a direct converter call:
-
-```python
-from independent_apps.who_when.datasets.who_when.graph_converter import process_json_path
-
-graphs = process_json_path(
-    input_path,
-    output_path=graph_path,
-    edge_types=("execution_flow", "data_flow"),
-)
-```
-
 Changing the edge set changes the graph structure. Use distinct graph files and checkpoints for different edge configurations.
 
 ## 6. Who&When-Specific Parameters
@@ -272,7 +260,7 @@ Changing the edge set changes the graph structure. Use distinct graph files and 
 
 The two Who&When dataset IDs correspond to the Algorithm-Generated and Hand-Crafted subsets.
 
-For Who&When, `--max-causes`, `--max-prompt-upstream-chars`, `--prompt-context-policy`, and `--max-stage2-candidates` configure the Combined implementation. The Separate implementation retains its own internal candidate and context settings; changing these flags does not tune that implementation. `--separate-order` applies only to Separate with cascade enabled. `--edge-types` applies to graph construction for both modes.
+For Who&When, `--max-causes`, `--max-prompt-upstream-chars`, `--prompt-context-policy`, and `--max-stage2-candidates` apply only to `combined`. `--separate-order` applies only to `separate` with cascade enabled. `--edge-types` applies to both modes.
 
 ## 7. TRAIL-Specific Parameters
 
@@ -291,10 +279,10 @@ H0/H1 controls how cause states are organized, rather than which physical edges 
 
 | Parameter | Accepted values | Meaning |
 |---|---|---|
-| `--trail-schedule-scope` | `legacy` / `all_nodes` | `legacy` retains the existing scheduling scope associated with final nodes; `all_nodes` includes every graph node in the diagnosis schedule. |
+| `--trail-schedule-scope` | `legacy` / `all_nodes` | `legacy` schedules nodes reachable by reverse traversal from final nodes; `all_nodes` includes every graph node in the diagnosis schedule. |
 | `--trail-final-hypothesis-policy` | `gated` / `retain_candidates` | `gated` initializes upstream cause candidates only when the final output is judged to have failed; `retain_candidates` retains trace-supported upstream candidates even if the final output is not judged to have failed. |
 
-In the Notebook, `TRAIL_SCHEDULE_SCOPE=None` uses the default `legacy`, and `TRAIL_FINAL_HYPOTHESIS_POLICY=None` uses the default `gated`.
+In the Notebook, `TRAIL_SCHEDULE_SCOPE=None` uses the default `legacy`, and `TRAIL_FINAL_HYPOTHESIS_POLICY=None` uses the default `gated`. The H1 cause-path state limit is 8; it is not a CLI or Notebook setting.
 
 ### 7.3 Request and Token Budgets
 
@@ -354,11 +342,11 @@ When using `local_complete_cause_partial`, report the profile and the numbers of
 `--maadbench-evaluation-score-source` / `MAAD_EVALUATION_SCORE_SOURCE`:
 
 - `final`: Use the final action-level `anomaly_score`.
-- `local`: Use the anomaly score from local inspection (`anomaly_score` in the local prediction or `local_anomaly_score`).
+- `local`: Use the saved local anomaly score when available. Use `final` for routine evaluation. This option does not change the diagnosis mode.
 
 `--maadbench-threshold-policy` / `MAAD_THRESHOLD_POLICY`:
 
-- `fixed`: Use the official fixed-threshold rule. `MAAD_ANOMALY_FRACTION` controls the anomaly fraction used by this rule (Notebook default 0.1).
+- `fixed`: Use the official fixed-anomaly-fraction rule. `MAAD_ANOMALY_FRACTION` sets the target anomaly fraction (default 0.1, or 10%), not a score cutoff.
 - `oracle`: Use test-set ground-truth labels to determine the top-k threshold as an oracle comparison. This is not an unlabeled threshold available at deployment time and must not be confused with the primary `fixed` results.
 
 ### 8.5 Data Filtering and Official Splits
@@ -374,8 +362,8 @@ When using `local_complete_cause_partial`, report the profile and the numbers of
 | `--maadbench-unknown-status` | Handle unknown labels: `error` raises an error, `anomaly` treats them as anomalous, and `drop` excludes them. |
 | `MAAD_DEV_SIZE` / `--maadbench-dev-size` | Development split fraction taken from the official training portion. |
 | `MAAD_DEV_SEED` / `--maadbench-dev-seed` | Development split random seed. |
-| `MAAD_DEV_TRACE_LIMIT` / `--maadbench-dev-trace-limit` | Maximum number of traces for a development pilot; `None` uses the full development split. |
-| `MAAD_DEV_PILOT_SEED` / `--maadbench-dev-pilot-seed` | Random seed for selecting a smaller pilot subset from the development pool. |
+| `MAAD_DEV_TRACE_LIMIT` / `--maadbench-dev-trace-limit` | Maximum number of room groups for a development pilot; `None` uses the full development split. |
+| `MAAD_DEV_PILOT_SEED` / `--maadbench-dev-pilot-seed` | Random seed for selecting development pilot room groups. Specify an integer when using `official_dev` (Notebook default 107). |
 | `MAAD_OFFICIAL_ROOT` / `--maadbench-official-root` | Official MAADBench repository root containing `benchmark_AD/utils.py` or a discoverable `utils.py`. By default, discovery starts from the input path. |
 | `MAAD_DUMP_VISIBLE_CONTEXT` / `--maadbench-dump-visible-context` | Export model-visible context for debugging; disabled by default. |
 
@@ -457,7 +445,7 @@ outputs/
 ## 10. Checkpoints, Resumption, and Result Interpretation
 
 - Resume from an existing checkpoint only when the model, graph, and diagnosis configuration match.
-- Use a new checkpoint path when changing the model, graph edge set, cause state, diagnosis mode, separate order, or MAADBench split. Who&When does not enforce full configuration compatibility for manually selected checkpoints; verify the original configuration and graph before resuming. Matching trace counts alone do not prove graph identity.
+- Use a new checkpoint path when changing the model, graph edge set, cause state, diagnosis mode, separate order, or MAADBench split. Verify the experiment settings before reusing a manually selected checkpoint.
 - Partial runs such as `END=2` are intended for workflow checks, not full-dataset results.
 - Inspect `coverage`, `evaluation_status`, the evaluated sample count, and the split during evaluation.
 - `SUCCESS`, `PARTIAL`, and `FAILED` are execution statuses, not measures of diagnostic accuracy.
@@ -476,7 +464,7 @@ Evaluation units and metric definitions differ across datasets. Compare numerica
 
 1. Start with a small `END` value to verify graph, checkpoint, and evaluation paths.
 2. Regenerate the graph and use a separate checkpoint when changing the graph edge set.
-3. For blind diagnosis, set `NO_GROUND_TRUTH=True`. This removes the top-level task reference answer (`ground_truth`), not necessarily every reference embedded in raw trace text. Keep `INCLUDE_EVAL_LABELS=False` unless reference labels are needed in saved records for auditing.
+3. Set `NO_GROUND_TRUTH=True` to exclude the top-level task reference answer (`ground_truth`). Keep `INCLUDE_EVAL_LABELS=False` unless labels are needed in saved records. This option does not remove references embedded in raw trace text.
 4. `MAAD_SCOPE=all` diagnoses all graph records. Use `official_test` to diagnose only the official test split.
 5. The `oracle` threshold uses evaluation labels to select the threshold and is suitable only as an oracle comparison. Explicitly report the threshold policy used for primary results.
 6. Set `MAAD_OFFICIAL_ROOT` if the official MAADBench evaluation utilities cannot be located automatically.
@@ -489,3 +477,6 @@ benchmark data, API credentials, or model requests:
 
 ```sh
 python -m unittest discover -s tests -v
+```
+
+These tests validate CLI arguments and configuration without running diagnosis.
